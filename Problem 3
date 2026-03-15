@@ -1,0 +1,200 @@
+#region imports
+"""
+Landon Norris
+MAE 3403 - Computer Methods
+Exam 1 - Problem 3
+
+This program models the given RLC circuit using a circuit class.
+It asks the user for R, C, L, amplitude, frequency, and phase of v(t),
+then solves for i1(t), i2(t), and vc(t) for 10 seconds using solve_ivp.
+
+Circuit relations used:
+    v(t) = L di1/dt + vc
+    i1 = i2 + iC
+    i2 = vc / R
+    iC = C dvc/dt
+
+State variables:
+    y1 = i1
+    y2 = vc
+
+Then:
+    di1/dt = (v(t) - vc) / L
+    dvc/dt = (i1 - vc/R) / C
+
+Also:
+    i2 = vc / R
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+#endregion
+
+
+#region class
+class Circuit:
+    """
+    Circuit class for the RLC network in Problem 3.
+
+    Attributes
+    ----------
+    R : float
+        Resistance in ohms
+    C : float
+        Capacitance in farads
+    L : float
+        Inductance in henries
+    amplitude : float
+        Amplitude of source voltage
+    frequency : float
+        Angular frequency of source voltage
+    phase : float
+        Phase angle of source voltage in radians
+    """
+
+    def __init__(self, R, C, L, amplitude, frequency, phase):
+        """Initialize circuit parameters."""
+        self.R = R
+        self.C = C
+        self.L = L
+        self.amplitude = amplitude
+        self.frequency = frequency
+        self.phase = phase
+
+    def source_voltage(self, t):
+        """Return v(t) = A*sin(wt + phase)."""
+        return self.amplitude * np.sin(self.frequency * t + self.phase)
+
+    def ode_system(self, t, y):
+        """
+        State equations for the circuit.
+
+        Parameters
+        ----------
+        t : float
+            Time
+        y : list or ndarray
+            State vector [i1, vc]
+
+        Returns
+        -------
+        list
+            [di1/dt, dvc/dt]
+        """
+        i1 = y[0]
+        vc = y[1]
+
+        di1dt = (self.source_voltage(t) - vc) / self.L
+        dvc_dt = (i1 - vc / self.R) / self.C
+
+        return [di1dt, dvc_dt]
+
+    def simulate(self, t0=0.0, tf=10.0, npts=2000):
+        """
+        Simulate the circuit from t0 to tf.
+
+        Returns
+        -------
+        t : ndarray
+            Time values
+        i1 : ndarray
+            Current through inductor/top branch
+        i2 : ndarray
+            Current through resistor branch
+        vc : ndarray
+            Capacitor voltage
+        """
+        t_eval = np.linspace(t0, tf, npts)
+        y0 = [0.0, 0.0]   # i1(0)=0, vc(0)=0 assumed
+
+        sol = solve_ivp(
+            self.ode_system,
+            [t0, tf],
+            y0,
+            t_eval=t_eval
+        )
+
+        t = sol.t
+        i1 = sol.y[0]
+        vc = sol.y[1]
+        i2 = vc / self.R
+
+        return t, i1, i2, vc
+
+    def doPlot(self):
+        """
+        Solve the circuit and plot i1, i2, and vc.
+        Left axis: i1 and i2
+        Right axis: vc
+        """
+        t, i1, i2, vc = self.simulate()
+
+        fig, ax1 = plt.subplots(figsize=(9, 6))
+        ax2 = ax1.twinx()
+
+        # left axis currents
+        ax1.plot(t, i1, 'k-', label=r'$i_1(t)$')
+        ax1.plot(t, i2, 'k--', label=r'$i_2(t)$')
+
+        # right axis capacitor voltage
+        ax2.plot(t, vc, 'k:', label=r'$v_c(t)$')
+
+        # labels and limits similar to the example figure
+        ax1.set_xlabel('t (s)')
+        ax1.set_ylabel(r'$i_1, i_2$ (A)')
+        ax2.set_ylabel(r'$v_c(t)$ (V)')
+
+        ax1.set_xlim(0, 10)
+
+        # combine legends from both axes
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+
+        ax1.grid(True)
+        plt.title('RLC Circuit Response')
+        plt.show()
+#endregion
+
+
+#region helpers
+def get_float(prompt, default):
+    """Ask user for float input with default value."""
+    entry = input(f"{prompt} [{default}]: ").strip()
+    return float(entry) if entry else float(default)
+#endregion
+
+
+#region main
+def main():
+    """
+    Main command-line interface for Problem 3.
+    User may repeatedly change parameters and rerun after the plot is closed.
+    """
+    print("Problem 3 - RLC Circuit Simulation")
+    print("Press Enter to accept the default values.\n")
+
+    while True:
+        R = get_float("Enter R (ohms)", 10.0)
+        L = get_float("Enter L (henries)", 20.0)
+        C = get_float("Enter C (farads)", 0.05)
+        amplitude = get_float("Enter amplitude of v(t)", 20.0)
+        frequency = get_float("Enter frequency of v(t)", 20.0)
+        phase = get_float("Enter phase of v(t) in radians", 0.0)
+
+        if R <= 0 or L <= 0 or C <= 0:
+            print("\nR, L, and C must all be greater than zero.\n")
+            continue
+
+        circuit = Circuit(R, C, L, amplitude, frequency, phase)
+        circuit.doPlot()
+
+        again = input("\nDo you want to simulate again with different parameters? (Y/N): ").strip().lower()
+        if again not in ('y', 'yes'):
+            print("\nDone.")
+            break
+
+
+if __name__ == "__main__":
+    main()
+#endregion
