@@ -1,0 +1,298 @@
+#region imports
+"""
+Landon Norris
+MAE 3403 - Computer Methods
+Exam 1 - Problem 1
+
+This program simulates gravel sizes from a truncated log-normal distribution for two suppliers
+and performs a 1-sided two-sample t-test to determine whether Supplier B has statistically
+smaller gravel than Supplier A.
+
+Assumptions:
+1. Rock diameter D is modeled as log-normal, so ln(D) ~ N(mu, sigma).
+2. After sieving, only rocks with Dmin <= D <= Dmax remain, so the distribution is truncated.
+3. Supplier A uses a large screen opening of 1.0 in.
+4. Supplier B uses a large screen opening of 7/8 in = 0.875 in.
+5. Both suppliers use the same lower screen opening Dmin.
+6. Each supplier provides 11 samples of N = 100 rocks.
+7. A 1-sided Welch two-sample t-test is used with alpha = 0.05.
+8. The t-distribution CDF is computed using the HW3b Simpson-rule method.
+"""
+import math
+import numpy as np
+from scipy.integrate import quad
+from scipy.optimize import fsolve
+#endregion
+
+
+#region HW3b t-distribution code
+def simpson(f, a, b, N=12000):
+    """Approximate integral of f from a to b using Simpson's rule."""
+    if N % 2 == 1:
+        N += 1
+
+    if a == b:
+        return 0.0
+
+    if a > b:
+        a, b = b, a
+        sign = -1.0
+    else:
+        sign = 1.0
+
+    h = (b - a) / N
+    s = f(a) + f(b)
+
+    for i in range(1, N):
+        x = a + i * h
+        s += (4.0 if i % 2 == 1 else 2.0) * f(x)
+
+    return sign * (h / 3.0) * s
+
+
+def Km(m):
+    """Return normalization constant for Student's t distribution."""
+    return math.gamma((m + 1) / 2.0) / (math.sqrt(m * math.pi) * math.gamma(m / 2.0))
+
+
+def t_integrand(u, m):
+    """Integrand used in the t-distribution CDF."""
+    return (1.0 + (u * u) / m) ** (-(m + 1) / 2.0)
+
+
+def t_cdf(z, m, N=12000):
+    """Compute Student's t CDF using Simpson's rule and symmetry."""
+    if z == 0.0:
+        return 0.5
+
+    k = Km(m)
+    area = simpson(lambda u: t_integrand(u, m), 0.0, abs(z), N)
+    return 0.5 + k * area if z > 0 else 0.5 - k * area
+#endregion
+
+
+#region log-normal distribution functions
+def lognormal_pdf(D, mu, sigma):
+    """Standard log-normal PDF."""
+    if D <= 0:
+        return 0.0
+    return (1.0 / (D * sigma * math.sqrt(2.0 * math.pi))) * math.exp(
+        -((math.log(D) - mu) ** 2) / (2.0 * sigma ** 2)
+    )
+
+
+def lognormal_cdf(D, mu, sigma):
+    """Standard log-normal CDF computed numerically using quad."""
+    D = float(D)
+    if D <= 0:
+        return 0.0
+    value, _ = quad(lambda x: lognormal_pdf(x, mu, sigma), 0.0, D)
+    return value
+
+
+def trunc_constants(mu, sigma, Dmin, Dmax):
+    """Return F(Dmin) and F(Dmax) for truncation normalization."""
+    Fmin = lognormal_cdf(Dmin, mu, sigma)
+    Fmax = lognormal_cdf(Dmax, mu, sigma)
+    return Fmin, Fmax
+
+
+def trunc_lognormal_cdf(D, mu, sigma, Dmin, Dmax, Fmin, Fmax):
+    """CDF of the truncated log-normal distribution on [Dmin, Dmax]."""
+    D = float(D)
+
+    if D <= Dmin:
+        return 0.0
+    if D >= Dmax:
+        return 1.0
+
+    denom = Fmax - Fmin
+    if denom <= 0:
+        raise ValueError("Invalid truncation interval.")
+
+    numer, _ = quad(lambda x: lognormal_pdf(x, mu, sigma), Dmin, D)
+    return numer / denom
+#endregion
+
+
+#region sampling functions
+def generate_sample(mu, sigma, Dmin, Dmax, N):
+    """
+    Generate one sample of N rock diameters from the truncated log-normal distribution
+    using inverse transform sampling with fsolve.
+    """
+    Fmin, Fmax = trunc_constants(mu, sigma, Dmin, Dmax)
+    u_vals = np.random.rand(N)
+    sample = []
+
+    for u in u_vals:
+        guess = Dmin + u * (Dmax - Dmin)
+
+        root = fsolve(
+            lambda d: trunc_lognormal_cdf(float(d[0]), mu, sigma, Dmin, Dmax, Fmin, Fmax) - u,
+            [guess]
+        )[0]
+
+        sample.append(float(root))
+
+    return np.array(sample, dtype=float)
+
+
+def sample_mean_and_var(x):
+    """Return sample mean and unbiased sample variance."""
+    return float(np.mean(x)), float(np.var(x, ddof=1))
+
+
+def generate_11_sample_means(mu, sigma, Dmin, Dmax, Nsamp=11, Nrocks=100):
+    """
+    Generate 11 samples of 100 rocks each.
+    Return the list of sample means and sample variances.
+    """
+    means = []
+    variances = []
+
+    for i in range(Nsamp):
+        sample = generate_sample(mu, sigma, Dmin, Dmax, Nrocks)
+        dbar, s2 = sample_mean_and_var(sample)
+        means.append(dbar)
+        variances.append(s2)
+
+    return np.array(means, dtype=float), np.array(variances, dtype=float)
+#endregion
+
+
+#region t-test
+def welch_t_test(xA, xB, alpha=0.05):
+    """
+    Perform a 1-sided Welch t-test for:
+        H0: mu_B >= mu_A
+        H1: mu_B < mu_A
+
+    Returns test statistic, degrees of freedom, p-value, and reject decision.
+    """
+    nA = len(xA)
+    nB = len(xB)
+
+    meanA = float(np.mean(xA))
+    meanB = float(np.mean(xB))
+    varA = float(np.var(xA, ddof=1))
+    varB = float(np.var(xB, ddof=1))
+
+    se = math.sqrt(varA / nA + varB / nB)
+    t_stat = (meanB - meanA) / se
+
+    numerator = (varA / nA + varB / nB) ** 2
+    denominator = ((varA / nA) ** 2) / (nA - 1) + ((varB / nB) ** 2) / (nB - 1)
+    df = numerator / denominator
+
+    df_int = max(1, int(round(df)))
+    p_value = t_cdf(t_stat, df_int)
+
+    reject_H0 = p_value < alpha
+
+    return {
+        "meanA": meanA,
+        "meanB": meanB,
+        "varA": varA,
+        "varB": varB,
+        "t_stat": t_stat,
+        "df": df,
+        "df_int": df_int,
+        "p_value": p_value,
+        "reject_H0": reject_H0
+    }
+#endregion
+
+
+#region input helpers
+def get_float(prompt, default):
+    """Prompt for a float with a default value."""
+    user = input(f"{prompt} [{default}]: ").strip()
+    return float(user) if user else float(default)
+#endregion
+
+
+#region main
+def main():
+    """
+    Main CLI for comparing gravel from Supplier A and Supplier B.
+
+    User inputs:
+    - mu: mean of ln(D)
+    - sigma: standard deviation of ln(D)
+    - Dmin: lower sieve size
+
+    Fixed by problem statement:
+    - Supplier A: Dmax = 1.0 in
+    - Supplier B: Dmax = 0.875 in
+    - 11 samples per supplier
+    - 100 rocks per sample
+    - alpha = 0.05
+    """
+    print("Gravel Supplier Comparison Using 1-Sided t-Test")
+    print("Press Enter to accept suggested defaults.\n")
+
+    mu = get_float("Enter mu (mean of ln(D))", math.log(2.0))
+    sigma = get_float("Enter sigma (std dev of ln(D))", 1.0)
+    Dmin = get_float("Enter Dmin (small screen opening, in)", 3.0 / 8.0)
+
+    Dmax_A = 1.0
+    Dmax_B = 7.0 / 8.0
+    alpha = 0.05
+    Nsamp = 11
+    Nrocks = 100
+
+    if sigma <= 0:
+        raise ValueError("sigma must be greater than 0.")
+    if Dmin <= 0:
+        raise ValueError("Dmin must be greater than 0.")
+    if Dmin >= Dmax_B:
+        raise ValueError("Dmin must be less than both supplier Dmax values.")
+
+    print("\nGenerating supplier data...\n")
+
+    means_A, vars_A = generate_11_sample_means(mu, sigma, Dmin, Dmax_A, Nsamp, Nrocks)
+    means_B, vars_B = generate_11_sample_means(mu, sigma, Dmin, Dmax_B, Nsamp, Nrocks)
+
+    print("Supplier A (Dmax = 1.000 in)")
+    for i in range(Nsamp):
+        print(f"Sample {i+1:2d}: Dbar = {means_A[i]:.6f}   S^2 = {vars_A[i]:.6f}")
+
+    print(f"\nMean of sampling means     = {np.mean(means_A):.6f}")
+    print(f"Variance of sampling means = {np.var(means_A, ddof=1):.6f}")
+
+    print("\nSupplier B (Dmax = 0.875 in)")
+    for i in range(Nsamp):
+        print(f"Sample {i+1:2d}: Dbar = {means_B[i]:.6f}   S^2 = {vars_B[i]:.6f}")
+
+    print(f"\nMean of sampling means     = {np.mean(means_B):.6f}")
+    print(f"Variance of sampling means = {np.var(means_B, ddof=1):.6f}")
+
+    results = welch_t_test(means_A, means_B, alpha)
+
+    print("\n------------------------------------------")
+    print("1-Sided Hypothesis Test")
+    print("------------------------------------------")
+    print("H0: mu_B >= mu_A")
+    print("H1: mu_B <  mu_A")
+    print(f"alpha      = {alpha:.2f}")
+    print(f"t-stat     = {results['t_stat']:.6f}")
+    print(f"df (Welch) = {results['df']:.6f}")
+    print(f"df used    = {results['df_int']}")
+    print(f"p-value    = {results['p_value']:.6f}")
+
+    if results["reject_H0"]:
+        print("\nDecision: Reject H0.")
+        print("Conclusion: There is sufficient evidence at alpha = 0.05")
+        print("to conclude that Supplier B has statistically significantly")
+        print("smaller gravel than Supplier A.")
+    else:
+        print("\nDecision: Fail to reject H0.")
+        print("Conclusion: There is not sufficient evidence at alpha = 0.05")
+        print("to conclude that Supplier B has statistically significantly")
+        print("smaller gravel than Supplier A.")
+
+
+if __name__ == "__main__":
+    main()
+#endregion
