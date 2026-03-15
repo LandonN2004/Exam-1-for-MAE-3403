@@ -1,0 +1,128 @@
+#region imports
+"""
+Landon Norris
+MAE 3403 - Computer Methods
+Exam 1 - Problem 2
+
+Solve the IVP
+    y' = (y - 0.01x^2)^2 sin(x^2) + 0.02x
+    y(0) = 0.4
+
+on 0 <= x <= 5 using solve_ivp with step size h = 0.2.
+
+Also plot the exact solution
+    y = 1 / (2.5 - S(x)) + 0.01x^2
+where
+    S(x) = integral from 0 to x of sin(t^2) dt
+
+using quad from scipy.integrate.
+
+Plot requirements follow the exam statement.
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
+from scipy.integrate import solve_ivp, quad
+#endregion
+
+
+#region differential equation
+def ode_func(x, y):
+    """
+    Return y' for the IVP.
+
+    Parameters
+    ----------
+    x : float
+        Independent variable.
+    y : list or ndarray
+        Current value of dependent variable in solve_ivp form.
+
+    Returns
+    -------
+    list
+        Derivative [y'].
+    """
+    dydx = (y[0] - 0.01 * x**2)**2 * np.sin(x**2) + 0.02 * x
+    return [dydx]
+#endregion
+
+
+#region exact solution helpers
+def fresnel_S(x):
+    """
+    Compute S(x) = integral_0^x sin(t^2) dt using quad.
+    """
+    value, _ = quad(lambda t: np.sin(t**2), 0.0, x)
+    return value
+
+
+def exact_solution(x):
+    """
+    Compute the exact solution:
+        y = 1 / (2.5 - S(x)) + 0.01x^2
+    """
+    Sx = fresnel_S(x)
+    return 1.0 / (2.5 - Sx) + 0.01 * x**2
+#endregion
+
+
+#region main
+def main():
+    """
+    Solve the IVP numerically and compare to the exact solution.
+    """
+    # interval and step size from exam
+    x0 = 0.0
+    xf = 5.0
+    h = 0.2
+    y0 = [0.4]
+
+    # x values for numerical markers every 0.2
+    x_num = np.arange(x0, xf + h, h)
+
+    # solve with solve_ivp and force output at increments of 0.2
+    sol = solve_ivp(
+        ode_func,
+        [x0, xf],
+        y0,
+        t_eval=x_num
+    )
+
+    y_num = sol.y[0]
+
+    # smooth x values for exact solution solid line
+    x_exact = np.linspace(x0, xf, 400)
+    y_exact = np.array([exact_solution(x) for x in x_exact])
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    plt.plot(x_exact, y_exact, label='Exact')
+    plt.plot(x_num, y_num, '^', label='Numerical')
+
+    # axes limits and labels
+    plt.xlim(0.0, 6.0)
+    plt.ylim(0.0, 1.0)
+    plt.xlabel('x')
+    plt.ylabel('y')
+
+    # title
+    plt.title("IVP: y' = (y - 0.01x^2)^2 sin(x^2) + 0.02x, y(0) = 0.4")
+
+    # legend
+    plt.legend()
+
+    # tick marks inward on all sides
+    plt.tick_params(direction='in', top=True, right=True)
+
+    # format axis numbers with one decimal place
+    ax = plt.gca()
+    ax.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()
+#endregion
