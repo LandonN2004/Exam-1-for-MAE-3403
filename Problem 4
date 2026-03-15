@@ -1,0 +1,203 @@
+#region problem 4
+"""
+Landon Norris
+MAE 3403 - Computer Methods
+Exam 1 - Problem 4
+
+Solve the second-order ODE
+
+    y'' - y = x
+
+with user-provided:
+    y(0)
+    y'(0)
+    step size h
+    target x value
+
+The program uses:
+1. Improved Euler method
+2. Runge-Kutta 4th order method
+
+State variables:
+    y1 = y
+    y2 = y'
+
+Then:
+    y1' = y2
+    y2' = y1 + x
+because y'' - y = x  =>  y'' = y + x
+"""
+#endregion
+
+import math
+
+
+#region system functions
+def f1(x, y1, y2):
+    """Return y1' = y'."""
+    return y2
+
+
+def f2(x, y1, y2):
+    """Return y2' = y'' = y + x."""
+    return y1 + x
+#endregion
+
+
+#region improved euler
+def improved_euler_step(x, y1, y2, h):
+    """
+    Perform one Improved Euler (Heun) step for the system.
+
+    Returns
+    -------
+    x_next, y1_next, y2_next
+    """
+    # predictor slopes
+    k1_y1 = f1(x, y1, y2)
+    k1_y2 = f2(x, y1, y2)
+
+    # predicted values
+    y1_pred = y1 + h * k1_y1
+    y2_pred = y2 + h * k1_y2
+    x_next = x + h
+
+    # corrector slopes
+    k2_y1 = f1(x_next, y1_pred, y2_pred)
+    k2_y2 = f2(x_next, y1_pred, y2_pred)
+
+    # average slope
+    y1_next = y1 + (h / 2.0) * (k1_y1 + k2_y1)
+    y2_next = y2 + (h / 2.0) * (k1_y2 + k2_y2)
+
+    return x_next, y1_next, y2_next
+#endregion
+
+
+#region rk4
+def rk4_step(x, y1, y2, h):
+    """
+    Perform one Runge-Kutta 4th order step for the system.
+
+    Returns
+    -------
+    x_next, y1_next, y2_next
+    """
+    k1_y1 = f1(x, y1, y2)
+    k1_y2 = f2(x, y1, y2)
+
+    k2_y1 = f1(x + h / 2.0, y1 + h * k1_y1 / 2.0, y2 + h * k1_y2 / 2.0)
+    k2_y2 = f2(x + h / 2.0, y1 + h * k1_y1 / 2.0, y2 + h * k1_y2 / 2.0)
+
+    k3_y1 = f1(x + h / 2.0, y1 + h * k2_y1 / 2.0, y2 + h * k2_y2 / 2.0)
+    k3_y2 = f2(x + h / 2.0, y1 + h * k2_y1 / 2.0, y2 + h * k2_y2 / 2.0)
+
+    k4_y1 = f1(x + h, y1 + h * k3_y1, y2 + h * k3_y2)
+    k4_y2 = f2(x + h, y1 + h * k3_y1, y2 + h * k3_y2)
+
+    y1_next = y1 + (h / 6.0) * (k1_y1 + 2.0 * k2_y1 + 2.0 * k3_y1 + k4_y1)
+    y2_next = y2 + (h / 6.0) * (k1_y2 + 2.0 * k2_y2 + 2.0 * k3_y2 + k4_y2)
+
+    x_next = x + h
+    return x_next, y1_next, y2_next
+#endregion
+
+
+#region solvers
+def solve_improved_euler(y0, yp0, h, x_target):
+    """
+    Solve the system from x=0 to x=x_target using Improved Euler.
+    Assumes x_target is reachable by repeated steps of size h.
+    """
+    x = 0.0
+    y1 = y0
+    y2 = yp0
+
+    nsteps = int(round(x_target / h))
+
+    for _ in range(nsteps):
+        x, y1, y2 = improved_euler_step(x, y1, y2, h)
+
+    return x, y1, y2
+
+
+def solve_rk4(y0, yp0, h, x_target):
+    """
+    Solve the system from x=0 to x=x_target using RK4.
+    Assumes x_target is reachable by repeated steps of size h.
+    """
+    x = 0.0
+    y1 = y0
+    y2 = yp0
+
+    nsteps = int(round(x_target / h))
+
+    for _ in range(nsteps):
+        x, y1, y2 = rk4_step(x, y1, y2, h)
+
+    return x, y1, y2
+#endregion
+
+
+#region helpers
+def get_float(prompt):
+    """Safely read a floating-point value from the user."""
+    while True:
+        try:
+            return float(input(prompt).strip())
+        except ValueError:
+            print("Enter a valid number.")
+
+
+def valid_target_x(x_target, h):
+    """
+    Check if x_target is approximately an integer multiple of h.
+    """
+    ratio = x_target / h
+    return abs(ratio - round(ratio)) < 1e-10
+#endregion
+
+
+#region main
+def main():
+    """
+    Command-line interface for Problem 4.
+    """
+    print('For the initial value problem y"" - y = x')
+
+    y0 = get_float("Enter the value of y at x=0: ")
+    yp0 = get_float("Enter the value of y' at x=0: ")
+    h = get_float("Enter the step size for the numerical solution: ")
+
+    if h <= 0:
+        raise ValueError("Step size h must be greater than zero.")
+
+    while True:
+        x_target = get_float("At what value of x do you want to know y and y'? ")
+
+        if x_target < 0:
+            print("Please enter x >= 0.")
+            continue
+
+        if not valid_target_x(x_target, h):
+            print("x must be an integer multiple of h for this program.")
+            print("For example, if h = 0.1 then x could be 0.2, 0.5, 1.0, etc.")
+            continue
+
+        x_ie, y_ie, yp_ie = solve_improved_euler(y0, yp0, h, x_target)
+        x_rk, y_rk, yp_rk = solve_rk4(y0, yp0, h, x_target)
+
+        print(f"\nAt x={x_target:.3f}")
+        print(f"For the improved Euler method: y={y_ie:.3f}, and y'={yp_ie:.3f}")
+        print(f"For the Runge-Kutta method: y={y_rk:.3f}, and y'={yp_rk:.3f}")
+
+        again = input("\nDo you want to compute at a different x? (Y/N): ").strip().lower()
+        if again not in ("y", "yes"):
+            break
+
+    print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()
+#endregion
