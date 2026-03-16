@@ -1,0 +1,1 @@
+Each program was created with the assistance of ChatGPT, to not only debug, but to combine codes, in Problem 1 we were tasked with using two codes from previous homeworks, so I asked for the best way to combine the codes and it guided me through that process, the other 3 problems GPT was used for debugging as the primary.
